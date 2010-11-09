@@ -1,0 +1,6 @@
+username: "user"
+password: "password"
+domain: "example.com"
+host: "homer.example.com"
+port: 636
+ssl: true

@@ -1,0 +1,183 @@
+==ADMapper
+Library to connect to ActiveDirectory and map your users to ActiveDirectory users.
+
+You supply your own classes and mix the User or Group module into your classes.
+
+== Why
+Because http://github.com/filefrog/activedirectory didn't work well for me and I wanted
+flexibility to use my own classes, whether those are in Sinatra or
+using full-blown ActiveRecord classes in a Rails app.
+
+== Installation
+
+It's a gem, so you can
+
+  gem install admapper
+
+Or you can clone the repo and build it yourself with
+
+  gem build admapper.gemspec
+
+== Usage
+Basic usage is simple. Include the gem
+
+  require 'rubygems'
+  require 'admapper'
+  
+Then add the mixin to your class of choice
+
+  class User
+    attr_accessor: username
+    include ADMapper::Resource
+  end
+  
+Finally, configure the connection:
+
+  ADMapper::Configuration.connection_info = {:username => "homer",
+                                             :password=>"foo",
+                                             :host => "your_ad_host",
+                                             :port=>"636",
+                                             :ssl => true,
+                                             :domain => "example.com"}
+                                             
+The connection_info method takes a hash, so you can use a YML file if you'd like:
+
+    CONFIG_OPTS = YAML::load(File.open(File.expand_path(File.dirname(__FILE__) + "/admapper.yml"))).symbolize_keys
+    ADMapper::Configuration.connection_info  
+                                                                         
+== Working with Users
+
+=== Finding someone by username
+
+  u = User.find_in_ad_by_username("homer")
+  
+This creates a new instance of your User class. If you're using ActiveRecord, you can save this.
+
+=== Mapping users
+
+We use the "username" column to find stuff in ActiveDirectory by default. But you may not have a username column - you might call it "login". You may also want to easily grab other info from ActiveDirectory and map it to your own objects. In your model, add this method:
+
+Simply map your model (keys of the hash) to ActiveDirectory (values of the hash)
+
+  def ad_map
+    {
+      :username => :samaccountname,
+      :full_name => :displayname
+    }
+  end
+
+When you call the find_in_ad_by_username method, this method gets called.
+You can also access the actual Net::LDAP::Entry object by calling 
+
+  user = User.find_in_ad_by_username("homer")
+  user.ad_user
+  user.ad_user.samaccountname
+  user.ad_user.givenname
+  
+=== Working with an existing user
+So maybe you have a user already.
+
+   u = User.find(1)
+
+And you want his AD information? Fetch it. It'll default to looking up the user in ActiveDirectory by the <tt>username</tt> attribute.
+
+   u.find_in_ad
+  
+This will fill in the attributes you specified in your ad_map method.
+
+You can use a different field. If you store the username as "login", do this:
+
+   u.find_in_ad(:key => "login")
+   
+  
+=== Authenticating a user
+
+Don't do this. Taking someone's password and passing it on to Active Directory is just stupid. Use CAS, Shibboleth, or something else that prevents your app from ever seeing a user's password. If you insist on doing this, use SSL, filter the password out of your logs, and pray. This will let you do what you want
+
+   User.authenticate_with_active_directory("homer", "1234") 
+   
+It'll return true or false. It won't return a user. I assume you'll be wrapping this call in something else that will fetch the user object from your local DB. 
+
+== Groups
+
+Working on group support. Got a few things working:
+
+=== Getting groups
+
+Create your own class
+
+    class Group
+      attr_accessor :name
+      include ADMapper::Group
+    end
+
+Then look for a group
+
+   g = Group.find_in_ad_by_name("Marketing")
+   
+You can also look for groups
+
+   groups = Group.find_all_in_ad_by_name("HR.*")
+   
+=== Users and their groups
+
+Need to find all groups for a user?
+
+    class Group
+      attr_accessor :name
+      include ADMapper::Group
+    end
+
+    class User
+      attr_accessor :name, :username
+  
+      include ADMapper::User
+      set_group_class Group
+    end
+    
+Then get a user
+
+   u = User.find(1)
+   u.find_in_ad
+   groups = u.groups
+
+== Testing
+
+I'm not giving you my credentials, so you'll need to supply your own. Create the file 
+
+   test/admapper.yml
+   
+and put this inside:
+
+  username: "username"
+  password: "password"
+  domain: "example.com"
+  host: "domain.controller.example.com"
+  ssl: true
+  port: 636
+
+Then open test_helper and change the GROUP constant to a group that your username is a member of.
+
+Given good credentials, the tests should pass. 
+
+== Patches
+  * Fork it
+  * Write a test
+  * Make a fix
+  * send a patch or a pull request.
+  * Don't touch the changelog. 
+  * If it doesn't have a test, I'm not looking at it.
+  
+If this doesn't do what you want it to do, fork this and write your own library. I'm sharing this as a starting point and this is the bare minimum I need to get my AD tasks accomplished.
+
+== Changelog
+0.0.3 (2010-11-08)
+ * Added group lookup by name
+ * Added ability to get groups for a user
+0.0.2 (2010-03-31)
+ * refactoring to a central configuration option
+ * removed ad_connect! class method from resource module. Use a single global connection
+0.0.1 (2010-03-30)
+ * Initial mixin and basic support for finding stuff via AD
+ * Mapping objects
+ * Tests
